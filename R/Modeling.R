@@ -823,7 +823,7 @@ which(table(list.filenames.dates)==3)
 which(table(list.filenames.dates)==4)
 
 
-landusecrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"unnamed\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"northing\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
+#landusecrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"unnamed\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"northing\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
 landusecrs <- "PROJCS[\"Sinusoidal\", GEOGCS[\"GCS_unnamed ellipse\",
                             DATUM[\"D_unknown\", SPHEROID[\"Unknown\",6371007.181,0]],
                             PRIMEM[\"Greenwich\",0], UNIT[\"Degree\",0.017453292519943295]],
@@ -833,92 +833,108 @@ croplanduse <- st_transform(cropLongLat5c_small,crs = landusecrs)
 #croplanduse <- croplanduse[,2]
 crs(croplanduse)
 
-for(i in seq(1,length(list.filenames),2)){
-  a <- sds(list.filenames[i])
-  b<- sds(list.filenames[i+1])
+
+
+for(index in seq(1,length(list.filenames),2)){
+  a <- sds(list.filenames[index])
+  b<- sds(list.filenames[index+1])
   a <- a[1]
   b <- b[1]
   # a <- mean(a,na.rm=TRUE)
   # b<-mean(b,na.rm=TRUE)
-  a <- crop(a, croplanduse)
-  b <- crop(b,croplanduse)
   ab<-merge(a,b)
-  ab <- terra::aggregate(ab,2,"mean")
-  ab <- project(ab,"+proj=longlat +datum=WGS84 +no_defs")
-  writeRaster(ab,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Cropped ",substr(list.filenames[i],10,16)," 1km MCD12Q1 Land Use.tif"))
-  print(i)
+  writeRaster(ab,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Merged ",substr(list.filenames[index],10,16)," 1km MCD12Q1 Land Use.tif"))
 }
 
-a <- raster(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31","Cropped 2003001 MCD12Q1 Land Use.tif"))
-plot(a)
-a <- crop(a,cropLongLat5c_small)
-a <- mask(a,cropLongLat5c_small)
+
+list.filenames <- list.files(pattern = regex("^Merged.*.Land Use.tif$"))
+plot(raster(list.filenames[1]))
+reclassoriginal <- c(1,2,3,4,5,6,7,8,9,10,12,14,11,17,13,16,15)
+reclassnew <- c(rep(1,12),rep(2,2),3,4,5) #1 = Vegetaion, 2= Water, 3 Urban, 4=Barren, 5=Snow/Ice
+reclassmatrix <- as.matrix(cbind(reclassoriginal,reclassnew))
+
+for(index in 1:length(list.filenames)){
+  originalraster <- raster(list.filenames[index])
+  reclassraster <- reclassify(originalraster,reclassmatrix)
+  writeRaster(reclassraster,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Reclassified ",list.filenames[index]))
+}
+
+landtypes <- c("Vegetation","Water","Urban","Barren","Snow/Ice")
+Nratio <- as.integer(1000/463.3127)
+list.filenames <- list.files(pattern = regex("^Reclassified.*.Land Use.tif$"))
+
+for(index in 1:length(list.filenames)){
+  originalraster <- raster(list.filenames[index])
+  
+  for(i in min(values(originalraster)):max(values(originalraster))){
+    
+    landpercent <- raster::aggregate(originalraster, Nratio, fun=function(x, na.rm=T) {as.numeric(mean(x==i, na.rm=T)*100)})
+    writeRaster(landpercent,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Percentage ",
+                                   landtypes[i]," ", substr(list.filenames[index],21,27)," 1km MCD12Q1 Land Use.tif"))
+    print(landtypes[i])
+    
+  }
+  
+ # ab <- project(ab,"+proj=longlat +datum=WGS84 +no_defs")
+ # writeRaster(ab,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Cropped ",substr(list.filenames[i],10,16)," 1km MCD12Q1 Land Use.tif"))
+  print(index)
+}
+
+veg <- raster("Percentage Vegetation 2003001 1km MCD12Q1 Land Use.tif")
+water <- raster("Percentage Water 2003001 1km MCD12Q1 Land Use.tif")
+urban <- raster("Percentage Urban 2003001 1km MCD12Q1 Land Use.tif")
+barren <- raster("Percentage Barren 2003001 1km MCD12Q1 Land Use.tif")
+
+
+ATL_1km_grid <- raster(resolution=c(1000,1000),crs=proj4string(veg),ext=extent(veg))
+list.filenames <- list.files(pattern = regex("^Percentage.*.Land Use.tif$"))
+
+for(index in 1:length(list.filenames)){
+  originalraster <- raster(list.filenames[index])
+  originalraster.1km <- resample(originalraster,ATL_1km_grid,method = "ngb")
+  originalraster.1km <- crop(originalraster.1km,croplanduse)
+  writeRaster(originalraster.1km,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Cropped ", list.filenames[index]))
+}
+
+veg <- raster("Cropped Percentage Vegetation 2003001 1km MCD12Q1 Land Use.tif")
+urban <- raster("Cropped Percentage Urban 2018001 1km MCD12Q1 Land Use.tif")
+  
+####AOD####
+setwd(here::here("Data","Masked AOD"))
+a <- raster("Masked2002246 AOD.tif")
 a
 
+crophouston <- st_read("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/Shapefile/houston.shp")
+setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Houston Clean AOD")
+list.files()
+AODfilenames <- list.files()
+AODfilenames
+AODfilenames <- paste0(substr(AODfilenames,10,13),"_",substr(AODfilenames,14,16), "_",substr(AODfilenames,18,20))
+AODfilenames
+AODfilenames2 <- substr(AODfilenames,1,8)
+table(table(AODfilenames2))
+table(AODfilenames2)
+which(table(AODfilenames2)==1)
+which(table(AODfilenames2)==3)
+which(table(AODfilenames2)==4)
 
-for(i in 1:length(list.files())){
-  a <- raster(list.files()[i])
-  a <- crop(a,cropLongLat5c_small)
-  a <- mask(a,cropLongLat5c_small)
-  writeRaster(a,paste0("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Masked AOD/Masked",list.files()[i]))
+
+aodcrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"unnamed\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"northing\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
+crophouston <- st_transform(crophouston,crs = aodcrs)
+crophouston <- crophouston[,2]
+crs(crophouston)
+
+for(i in seq(1,length(list.files()),2)){
+  a <- sds(list.files()[i])
+  b<- sds(list.files()[i+1])
+  a <- a[2]
+  b <- b[2]
+  a <- mean(a,na.rm=TRUE)
+  b<-mean(b,na.rm=TRUE)
+  a <- crop(a, crophouston)
+  b <- crop(b,crophouston)
+  ab<-merge(a,b)
+  ab <- project(ab,"+proj=longlat +datum=WGS84 +no_defs")
+  writeRaster(ab,paste0("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/",substr(list.files()[i],10,16)," Houston AOD.tif"))
   print(i)
 }
-
-AODdates <- as.Date(as.numeric(substr(list.files(),5,7))-1,
-                    origin = as.Date(paste0(substr(list.files(),1,4),"-01-01")))
-table(table(AODdates))
-unique(AODdates)
-which(table(AODdates)>1)
-which(is.na(table(AODdates)))
-AODindices <- format(AODdates,"%Y-%m")
-
-setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Masked AOD")
-list.files()
-AOD <- stack(list.files())
-
-AODdates <- as.Date(as.numeric(substr(list.files(),11,13))-1,
-                    origin = as.Date(paste0(substr(list.files(),7,10),"-01-01")))
-AODyears <- format(AODdates,"%Y")
-
-table(table(AODyears))
-unique(AODyears)
-which(table(AODyears)>1)
-which(is.na(table(AODyears)))
-AODindices <- AODyears
-
-AOD <- stackApply(AOD,AODindices,mean,na.rm=TRUE)
-plot(AOD[[1]])
-AODdf <- data.frame(rasterToPoints(AOD))
-colnames(AODdf)[3:ncol(AODdf)] <- unique(AODindices)
-AODdf <- AODdf[,c(-1,-2)]
-mean(AODdf$`2002`,na.rm=T)
-AODdf <- apply(AODdf,2,mean,na.rm=T)
-AODdf <- as.data.frame(AODdf)
-AODdf
-AODdf$date <- paste0(unique(AODindices),"-01-01")
-AODdf$date <- as.Date(AODdf$date,format="%Y-%m-%d")
-AODdf$season <- time2season(AODdf$date,out.fmt="seasons")
-colnames(AODdf)[1]<-"AOD"
-AODdf$group = "5c"
-
-
-AODzip <- crop(AOD,cropLongLatzip_small)
-AODzip <- mask(AODzip,cropLongLatzip_small)
-AODzipdf <- data.frame(rasterToPoints(AODzip))
-colnames(AODzipdf)[3:ncol(AODzipdf)] <- unique(AODindices)
-AODzipdf <- AODzipdf[,c(-1,-2)]
-mean(AODzipdf$`2002`)
-AODzipdf <- apply(AODzipdf,2,mean,na.rm=T)
-AODzipdf <- as.data.frame(AODzipdf)
-AODzipdf
-AODzipdf$date <- paste0(unique(AODindices),"-01-01")
-AODzipdf$date <- as.Date(AODzipdf$date,format="%Y-%m-%d")
-AODzipdf$season <- time2season(AODzipdf$date,out.fmt="seasons")
-colnames(AODzipdf)[1]<-"AOD"
-AODzipdf$group = "ZIP"
-
-
-combind_AOD_df <- rbind(AODdf,AODzipdf)
-write.csv(combind_AOD_df,"Monthly Average AOD datatable.csv")
-  
-  
