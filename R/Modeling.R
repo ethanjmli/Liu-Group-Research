@@ -25,6 +25,7 @@ library(hydroTSM)
 #library(gifski)
 library(readxl)
 library(seas)
+library(here)
 tempcolorvector <- colorRampPalette(brewer.pal(11,"Spectral"))(1000)
 airpolcolorvector <- c(inferno(1000))
 
@@ -45,8 +46,9 @@ MODIStsp() #Load GUI for downloading specific areas/times of satellite data
 #Projection = set by user: +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0
 
 #####Get shapefiles and boundaries#####
-crop_parameters_5c <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/five_counties.shp")
-crop_parameters_5c <- st_read("/Users/ethan_j_li/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/five_counties.shp")
+# crop_parameters_5c <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/five_counties.shp")
+# crop_parameters_5c <- st_read("/Users/ethan_j_li/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/five_counties.shp")
+crop_parameters_5c <- st_read(here::here("Data","ATL_shps_for_April","five_counties.shp"))
 cropLongLat_5c <- st_transform(crop_parameters_5c,crs = st_crs("+proj=longlat +datum=WGS84 +no_defs"))
 cropLongLat_5c <- st_make_valid(cropLongLat_5c)
 cropLongLat5c_small <- cropLongLat_5c[,9]
@@ -56,7 +58,8 @@ cropLongLat_5c <- cbind(cropLongLat_5c,ymod, xmod)
 rm(crop_parameters_5c)
 st_bbox(cropLongLat_5c)
 
-crop_parameters_zip <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/expandedzip.shp")
+#crop_parameters_zip <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/expandedzip.shp")
+crop_parameters_zip <- st_read(here::here("Data","ATL_shps_for_April","expandedzip.shp"))
 cropLongLat_zip <- st_transform(crop_parameters_zip,crs = st_crs("+proj=longlat +datum=WGS84 +no_defs"))
 xmod <- c(1,0,0,1,-0.4,1)
 cropLongLat_zip <- cbind(cropLongLat_zip,xmod)
@@ -805,6 +808,117 @@ res(Elevation)
 
 
 ####Process MCD12A1 Land Use Data####
-  
+
+setwd(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"))
+list.files()
+list.filenames <- list.files(pattern = regex("^MCD12Q1.*\\.hdf$"))
+list.filenames
+list.filenames.dates <- paste0(substr(list.filenames,10,13),"_",substr(list.filenames,14,16), "_",substr(list.filenames,18,20))
+list.filenames.dates
+list.filenames.dates <- substr(list.filenames.dates,1,8)
+table(table(list.filenames.dates))
+table(list.filenames.dates)
+which(table(list.filenames.dates)==1)
+which(table(list.filenames.dates)==3)
+which(table(list.filenames.dates)==4)
+
+
+landusecrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"unnamed\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"northing\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
+landusecrs <- "PROJCS[\"Sinusoidal\", GEOGCS[\"GCS_unnamed ellipse\",
+                            DATUM[\"D_unknown\", SPHEROID[\"Unknown\",6371007.181,0]],
+                            PRIMEM[\"Greenwich\",0], UNIT[\"Degree\",0.017453292519943295]],
+       PROJECTION[\"Sinusoidal\"], PARAMETER[\"central_meridian\",0],
+       PARAMETER[\"false_easting\",0], PARAMETER[\"false_northing\",0],UNIT[\"Meter\",1]]"
+croplanduse <- st_transform(cropLongLat5c_small,crs = landusecrs)
+#croplanduse <- croplanduse[,2]
+crs(croplanduse)
+
+for(i in seq(1,length(list.filenames),2)){
+  a <- sds(list.filenames[i])
+  b<- sds(list.filenames[i+1])
+  a <- a[1]
+  b <- b[1]
+  # a <- mean(a,na.rm=TRUE)
+  # b<-mean(b,na.rm=TRUE)
+  a <- crop(a, croplanduse)
+  b <- crop(b,croplanduse)
+  ab<-merge(a,b)
+  ab <- terra::aggregate(ab,2,"mean")
+  ab <- project(ab,"+proj=longlat +datum=WGS84 +no_defs")
+  writeRaster(ab,paste0(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31"),"/Cropped ",substr(list.filenames[i],10,16)," 1km MCD12Q1 Land Use.tif"))
+  print(i)
+}
+
+a <- raster(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31","Cropped 2003001 MCD12Q1 Land Use.tif"))
+plot(a)
+a <- crop(a,cropLongLat5c_small)
+a <- mask(a,cropLongLat5c_small)
+a
+
+
+for(i in 1:length(list.files())){
+  a <- raster(list.files()[i])
+  a <- crop(a,cropLongLat5c_small)
+  a <- mask(a,cropLongLat5c_small)
+  writeRaster(a,paste0("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Masked AOD/Masked",list.files()[i]))
+  print(i)
+}
+
+AODdates <- as.Date(as.numeric(substr(list.files(),5,7))-1,
+                    origin = as.Date(paste0(substr(list.files(),1,4),"-01-01")))
+table(table(AODdates))
+unique(AODdates)
+which(table(AODdates)>1)
+which(is.na(table(AODdates)))
+AODindices <- format(AODdates,"%Y-%m")
+
+setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Masked AOD")
+list.files()
+AOD <- stack(list.files())
+
+AODdates <- as.Date(as.numeric(substr(list.files(),11,13))-1,
+                    origin = as.Date(paste0(substr(list.files(),7,10),"-01-01")))
+AODyears <- format(AODdates,"%Y")
+
+table(table(AODyears))
+unique(AODyears)
+which(table(AODyears)>1)
+which(is.na(table(AODyears)))
+AODindices <- AODyears
+
+AOD <- stackApply(AOD,AODindices,mean,na.rm=TRUE)
+plot(AOD[[1]])
+AODdf <- data.frame(rasterToPoints(AOD))
+colnames(AODdf)[3:ncol(AODdf)] <- unique(AODindices)
+AODdf <- AODdf[,c(-1,-2)]
+mean(AODdf$`2002`,na.rm=T)
+AODdf <- apply(AODdf,2,mean,na.rm=T)
+AODdf <- as.data.frame(AODdf)
+AODdf
+AODdf$date <- paste0(unique(AODindices),"-01-01")
+AODdf$date <- as.Date(AODdf$date,format="%Y-%m-%d")
+AODdf$season <- time2season(AODdf$date,out.fmt="seasons")
+colnames(AODdf)[1]<-"AOD"
+AODdf$group = "5c"
+
+
+AODzip <- crop(AOD,cropLongLatzip_small)
+AODzip <- mask(AODzip,cropLongLatzip_small)
+AODzipdf <- data.frame(rasterToPoints(AODzip))
+colnames(AODzipdf)[3:ncol(AODzipdf)] <- unique(AODindices)
+AODzipdf <- AODzipdf[,c(-1,-2)]
+mean(AODzipdf$`2002`)
+AODzipdf <- apply(AODzipdf,2,mean,na.rm=T)
+AODzipdf <- as.data.frame(AODzipdf)
+AODzipdf
+AODzipdf$date <- paste0(unique(AODindices),"-01-01")
+AODzipdf$date <- as.Date(AODzipdf$date,format="%Y-%m-%d")
+AODzipdf$season <- time2season(AODzipdf$date,out.fmt="seasons")
+colnames(AODzipdf)[1]<-"AOD"
+AODzipdf$group = "ZIP"
+
+
+combind_AOD_df <- rbind(AODdf,AODzipdf)
+write.csv(combind_AOD_df,"Monthly Average AOD datatable.csv")
   
   

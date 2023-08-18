@@ -58,6 +58,7 @@ crophouston <- st_make_valid(crophouston)
 
 houstonhighways <- st_intersection(houstonhighways, crophouston)
 plot(houstonhighways$geometry)
+
 ####AOD####
 crophouston <- st_read("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/Shapefile/houston.shp")
 setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Houston Clean AOD")
