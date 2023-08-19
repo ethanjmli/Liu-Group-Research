@@ -1,4 +1,4 @@
-library(MODIStsp) #For getting MODIS data
+library(MODIStsp) #Foxr getting MODIS data
 library(ggplot2) #For plotting maps
 library(raster) #For reading rasters
 #library(rgdal) #readOGR()
@@ -900,41 +900,63 @@ veg <- raster("Cropped Percentage Vegetation 2003001 1km MCD12Q1 Land Use.tif")
 urban <- raster("Cropped Percentage Urban 2018001 1km MCD12Q1 Land Use.tif")
   
 ####AOD####
-setwd(here::here("Data","Masked AOD"))
-a <- raster("Masked2002246 AOD.tif")
-a
+setwd("H:/Raw Atlanta AOD")
+list.files()
+a <-sds(list.files()[1])
+a[2]
+crs(a[2])
 
-crophouston <- st_read("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/Shapefile/houston.shp")
-setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Houston Clean AOD")
+
+#setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research")
 list.files()
 AODfilenames <- list.files()
 AODfilenames
-AODfilenames <- paste0(substr(AODfilenames,10,13),"_",substr(AODfilenames,14,16), "_",substr(AODfilenames,18,20))
-AODfilenames
-AODfilenames2 <- substr(AODfilenames,1,8)
-table(table(AODfilenames2))
-table(AODfilenames2)
-which(table(AODfilenames2)==1)
-which(table(AODfilenames2)==3)
-which(table(AODfilenames2)==4)
+AODfilenames.dates <- paste0(substr(AODfilenames,10,13),"_",substr(AODfilenames,14,16), "_",substr(AODfilenames,18,20))
+AODfilenames.dates
+AODfilenames.dates <- substr(AODfilenames,1,8)
+table(table(AODfilenames.dates))
+table(AODfilenames.dates)
+which(table(AODfilenames.dates)==1)
+which(table(AODfilenames.dates)==3)
+which(table(AODfilenames.dates)==4)
 
 
-aodcrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"unnamed\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"Meter\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"easting\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"northing\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
-crophouston <- st_transform(crophouston,crs = aodcrs)
-crophouston <- crophouston[,2]
-crs(crophouston)
 
-for(i in seq(1,length(list.files()),2)){
-  a <- sds(list.files()[i])
-  b<- sds(list.files()[i+1])
+aodcrs <- "PROJCRS[\"unnamed\",\n    BASEGEOGCRS[\"Unknown datum based upon the custom spheroid\",\n        DATUM[\"Not specified (based on custom spheroid)\",\n            ELLIPSOID[\"Custom spheroid\",6371007.181,0,\n                LENGTHUNIT[\"metre\",1,\n                    ID[\"EPSG\",9001]]]],\n        PRIMEM[\"Greenwich\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]],\n    CONVERSION[\"Sinusoidal\",\n        METHOD[\"Sinusoidal\"],\n        PARAMETER[\"Longitude of natural origin\",0,\n            ANGLEUNIT[\"degree\",0.0174532925199433],\n            ID[\"EPSG\",8802]],\n        PARAMETER[\"False easting\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8806]],\n        PARAMETER[\"False northing\",0,\n            LENGTHUNIT[\"metre\",1],\n            ID[\"EPSG\",8807]]],\n    CS[Cartesian,2],\n        AXIS[\"(E)\",east,\n            ORDER[1],\n            LENGTHUNIT[\"Meter\",1]],\n        AXIS[\"(N)\",north,\n            ORDER[2],\n            LENGTHUNIT[\"Meter\",1]]]"
+cropaod <- st_read(here::here("Data","ATL_shps_for_April","five_counties.shp"))
+#st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Data/ATL_shps_for_April/five_counties.shp")
+cropaod <- st_transform(cropaod,crs = aodcrs)
+cropaod <- cropaod[,9]
+crs(cropaod)
+
+rm(i)
+
+for(i in seq(1,length(AODfilenames),2)){
+  a <- sds(AODfilenames[i])
+  b<- sds(AODfilenames[i+1])
   a <- a[2]
   b <- b[2]
   a <- mean(a,na.rm=TRUE)
   b<-mean(b,na.rm=TRUE)
-  a <- crop(a, crophouston)
-  b <- crop(b,crophouston)
   ab<-merge(a,b)
-  ab <- project(ab,"+proj=longlat +datum=WGS84 +no_defs")
-  writeRaster(ab,paste0("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/",substr(list.files()[i],10,16)," Houston AOD.tif"))
+  ab <- crop(ab,cropaod)
+  writeRaster(ab,paste0(here::here("Data","Cropped Atlanta AOD"),"/Cropped ",substr(AODfilenames[i],10,16)," Atlanta AOD.tif"))
   print(i)
 }
+
+originalraster <- raster(here::here("Data","Cropped Atlanta AOD","Cropped 2013174 Atlanta AOD.tif"))
+originalraster
+crs(originalraster)
+
+
+setwd(here::here("Data","Cropped Atlanta AOD"))
+ATL_1km_grid <- raster(resolution=c(1000,1000),crs=proj4string(originalraster),ext=extent(originalraster))
+list.filenames <- list.files(pattern = regex("^Cropped.*.AOD.tif$"))
+
+for(index in 1:length(list.filenames)){
+  originalraster <- raster(list.filenames[index])
+  originalraster.1km <- resample(originalraster,ATL_1km_grid,method = "ngb")
+  writeRaster(originalraster.1km,paste0(here::here("Data","1km Cropped Atlanta AOD"),"/1km Cropped ", list.filenames[index]))
+  print(index)
+}
+
