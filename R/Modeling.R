@@ -12,20 +12,22 @@ library(tidyverse)
 library(dplyr)
 library(lubridate) #For working with dates
 library(viridis)
-library(ggnewscale)
-library(patchwork)
+#library(ggnewscale)
+#library(patchwork)
 library(rgeos)
 library(tidycensus)
 library(tmap)
 library(RColorBrewer)
-library(gridExtra)
-library(ggmap)
+#library(gridExtra)
+#library(ggmap)
 library(osmdata)
 library(hydroTSM)
 #library(gifski)
 library(readxl)
 library(seas)
 library(here)
+library(ncdf4)
+library(tigris)
 tempcolorvector <- colorRampPalette(brewer.pal(11,"Spectral"))(1000)
 airpolcolorvector <- c(inferno(1000))
 
@@ -960,3 +962,274 @@ for(index in 1:length(list.filenames)){
   print(index)
 }
 
+
+#Check extent of AOD and Land Use
+AOD <- raster(here::here("Data","1km Cropped Atlanta AOD","1km Cropped Cropped 2002002 Atlanta AOD.tif"))
+Landuse <- raster(here::here("Data","MCD12Q1 500m Land Use 2003_01_01-2022_12_31","Cropped Percentage Urban 2013001 1km MCD12Q1 Land Use.tif"))
+
+ext(AOD)
+ext(Landuse)
+res(AOD)
+res(Landuse)
+
+
+####Speciation Data####
+
+speciation.2021 <- read.csv(here::here("Data","PM2.5 Speciation","daily_SPEC_2021.csv"))
+table(speciation.2021$Parameter.Name)
+table(speciation.2021$Local.Site.Name)
+table(speciation.2021$State.Name)
+table(speciation.2021$Units.of.Measure)
+speciation.2021 <- speciation.2021 %>% filter(Units.of.Measure == "Micrograms/cubic meter (LC)")
+table(speciation.2021$Parameter.Name)
+
+speciation.2021.sf <- st_as_sf(speciation.2021,coords=c("Longitude","Latitude"),crs=4269)
+speciation.2021.sf.locations <- speciation.2021.sf %>% filter(!duplicated(geometry))
+tm_shape(speciation.2021.sf.locations)+
+  tm_dots()
+
+
+speciation.2021$Arithmetic.Mean <- ifelse(speciation.2021$Arithmetic.Mean<0,NA,speciation.2021$Arithmetic.Mean)
+sum(is.na(speciation.2021$Arithmetic.Mean))
+speciation.2021.availability.1 <- speciation.2021 %>% group_by(Site.Num,Date.Local) %>% summarize(missing=sum(is.na(Arithmetic.Mean)))
+
+
+speciation.2021.availability.2 <- speciation.2021 %>% mutate(year = year(Date.Local))
+#sum(!is.na(CDOdaily.temps.available$TAVG) | !is.na(CDOdaily.temps.available$TMAX) | !is.na(CDOdaily.temps.available$TMIN))
+
+#speciation.2021.availability.2 <- speciation.2021.availability.2 %>% group_by(year,STATION) %>% summarize(available = sum(!is.na(TAVG) | !is.na(TMAX) | !is.na(TMIN)),
+#                                                                                                      year = mean(year)
+#)
+
+speciation.2021.availability.2 <- speciation.2021.availability.2 %>% group_by(Site.Num,Parameter.Name) %>% summarize(available = sum(!is.na(Arithmetic.Mean)),year=mean(year))
+
+speciation.2021.availability.2 <- speciation.2021.availability.2 %>% mutate(missing = year.length(year)-available)
+
+speciation.2021.availability.3 <- speciation.2021.availability.2 %>% summarize(     
+  mean.available = mean(available),
+  #max.available = max(available),
+  mean.missing = mean(missing),
+  percent.missing = (mean(missing)/year.length(mean(year)))*100,
+  sites = length(unique(Site.Num)),
+  year = mean(year)
+ # site.names = paste(unique(STATION),collapse= ", ")
+)
+
+
+#CDOdaily.temps.available.sf <- st_as_sf(CDOdaily.temps.available,coords = c("LONGITUDE","LATITUDE"),crs =st_crs("+proj=longlat +datum=WGS84 +no_defs") )
+#CDOdaily.temps.available.sf <- CDOdaily.temps.available.sf %>% filter(!duplicated(geometry))
+#CDOdaily.temps.available.sf$Agency <- "NOAA CDO"
+
+
+#####MISR#####
+#install.packages("ncdf4")
+#library(ncdf4)
+us_states <- states()
+st_crs(us_states)
+us_states.CONUS <- us_states %>% dplyr::filter(!(NAME %in% c("United States Virgin Islands","Commonwealth of the Northern Mariana Islands",
+                                                      "American Samoa","Guam","Hawaii","Puerto Rico","Alaska")))%>% dplyr::select(NAME,geometry)
+
+tm_shape(us_states.CONUS)+
+  tm_borders()
+
+st_crs(us_states.CONUS)
+st_bbox(us_states.CONUS)  #xmin       ymin       xmax       ymax 
+                          #-124.84897   24.39631  -66.88544   49.38448 
+
+us_states.HI <- us_states %>% dplyr::filter(NAME %in% c("Hawaii"))%>% dplyr::select(NAME,geometry)
+st_bbox(us_states.HI) #xmin       ymin       xmax       ymax 
+                      #-178.44359   18.86546 -154.75579   28.51727 
+
+us_states.AK <- us_states %>% dplyr::filter(NAME %in% c("Alaska"))%>% dplyr::select(NAME,geometry)
+tm_shape(us_states.AK)+
+  tm_borders()
+st_bbox(us_states.AK) # xmin       ymin       xmax       ymax 
+                      #-179.23109   51.17509  179.85968   71.43979
+
+
+us_states.PR <- us_states %>% dplyr::filter(NAME %in% c("Puerto Rico"))%>% dplyr::select(NAME,geometry)
+st_bbox(us_states.PR)  # xmin      ymin      xmax      ymax 
+                        #-67.99875  17.83151 -65.16850  18.56800 
+
+#CONUS BB
+# CONUS <- st_read(here::here("Data","ATL_shps_for_April","US States Shapefile","US States Shapefile.shp"))
+# plot(CONUS)
+# st_bbox(CONUS)
+# tm_shape(CONUS)+
+#   tm_borders()
+
+
+#Path 18
+P18.dates <- seq.Date(as.Date("2003-01-01"),as.Date("2022-02-22"),by=16)
+
+MISR.P18 <- nc_open(here::here("Data","MISR Data","MISR_AM1_AS_AEROSOL_P044_O118079_F13_0023.nc"))
+{
+    sink('P_018_O117990.txt')
+  print(MISR.P18)
+    sink()
+}
+
+names(MISR.P18)
+MISR.P18[[8]]
+MISR.P18
+
+names(MISR.P18$var)
+
+MISR.P18.variables <- MISR.P18$var
+MISR.P18.variables$`4.4_KM_PRODUCTS/Year`
+
+library(mapchina)
+china <- mapchina::china
+test_grid <- read.csv(here::here("Python","own code","test_grid_mean_compare.csv"))
+test_grid.sf <- st_as_sf(test_grid, coords=c("Lon","Lat"),crs=4326)
+tm_shape(china)+
+  tm_borders()+
+tm_shape(test_grid.sf)+
+  tm_dots()
+
+plot(test_grid.sf["aod"])
+
+
+#Test grid
+own_test_grid <- read.csv(here::here("Python","own code","Test Output","2022227P037_O118064MISR Grid IDs.csv"))
+own_test_grid.sf <- st_as_sf(own_test_grid,coords = c("Lon","Lat"),crs = 4269)
+tm_shape(own_test_grid.sf)+
+  tm_dots()+
+tm_shape(us_states.CONUS)+
+  tm_borders()
+
+#Test AOD
+own_test_AOD <- read.csv(here::here("Python","own code","Test Output","2022227P037_O118064MISR AOD.csv"))
+own_test_AOD.sf <- st_as_sf(own_test_AOD, coords = c("Lon","Lat"),crs=4269)
+tm_shape(us_states.CONUS)+
+  tm_borders()+
+tm_shape(own_test_AOD.sf)+
+  tm_dots(col="aod_cal")
+
+
+#Test merging AOD
+list.files(here::here("Python","own code","Test Output"))
+test.list.filenames <- list.files(here::here("Python","own code","Test Output"))
+
+list.MISR.files <- list()
+
+#read.csv(here::here("Python","own code","Test Output",test.list.filenames[1]))
+
+for(i in 1:length(test.list.filenames)){
+  list.MISR.files[[i]] <- read.csv(here::here("Python","own code","Test Output",test.list.filenames[i]))
+} 
+
+list.MISR.files[[1]]
+
+MISR.Jan.2020 <-bind_rows(list.MISR.files)
+MISR.Jan.2020 <- MISR.Jan.2020 %>%mutate(sum_components = aod_1+aod_2+aod_3+aod_6+aod_8+aod_14+aod_19+aod_21,match_check = aod_cal - sum_components)  
+min(MISR.Jan.2020$match_check)
+max(MISR.Jan.2020$match_check)  
+MISR.Jan.2020 <- MISR.Jan.2020 %>% group_by(Lat,Lon) %>% summarise(across(everything(), list(mean)))
+
+MISR.Jan.2020.sf <- st_as_sf(MISR.Jan.2020,coords=c("Lon","Lat"),crs = 4269)
+tm_shape(us_states.CONUS)+
+  tm_borders()+
+tm_shape(MISR.Jan.2020.sf)+
+  tm_dots(col="aod_cal_1")
+st_crs(us_states.CONUS)
+
+test <- read.csv(here::here("Python","own code","Test Output","2020.1.22.P044_O106895MISR AOD.csv"))
+test.sf <- st_as_sf(test,coords = c("Lon","Lat"))
+tm_shape(us_states.CONUS)+
+  tm_borders()+
+tm_shape(MISR.Jan.2020.sf)+
+  tm_dots(col="aod_cal",breaks = quantile(MISR.Jan.2020.sf$aod_cal_1,probs=seq(0,1,0.01)))
+
+####Build 0.01 degree x 0.01 degree Lat/Lon Grid for Continental US####
+#0.0174532925199433/0.01
+
+st_bbox(us_states.CONUS)    #  xmin       ymin       xmax       ymax 
+                           #-124.84897   24.39631  -66.88544   49.38448 
+st_crs(us_states.CONUS)
+us_states.CONUS.ext <- ext(us_states.CONUS)
+us_states.CONUS.grid<- raster(xmn = -124.85,xmx = -66.88,ymn=24.39,ymx = 49.39,crs=4269,res=c(0.01,0.01))
+
+res(us_states.CONUS.grid)
+us_states.CONUS.grid
+
+st_crs(us_states.CONUS.grid)
+us_states.CONUS.grid <- as.data.frame(rasterToPoints(us_states.CONUS.grid))
+us_states.CONUS.grid$index <- rownames(us_states.CONUS.grid)
+write.csv(us_states.CONUS.grid,here::here("Data","CONUS Grid.csv"))
+
+us_states.CONUS.grid.sf <- st_as_sf(us_states.CONUS.grid,coords = c("x","y"),crs=4269)
+tm_shape(us_states.CONUS.grid.sf)+
+  tm_dots()+
+tm_shape(us_states.CONUS)+
+  tm_borders()
+
+
+####Build 0.01 degree x 0.01 degree Lat/Lon Grid for Alaska####
+#0.0174532925199433/0.01
+
+st_bbox(us_states.AK)     #xmin       ymin       xmax       ymax 
+                    #-179.23109   51.17509    -129.75   71.43979 
+st_crs(us_states.AK)
+us_states.AK.ext <- ext(us_states.AK)
+us_states.AK.grid<- raster(xmn = -179.24,xmx = -129.75,ymn=51.17,ymx = 71.44,crs=4269,res=c(0.01,0.01))
+
+res(us_states.AK.grid)
+us_states.AK.grid
+
+st_crs(us_states.AK.grid)
+us_states.AK.grid <- as.data.frame(rasterToPoints(us_states.AK.grid))
+us_states.AK.grid$index <- rownames(us_states.AK.grid)
+write.csv(us_states.AK.grid,here::here("Data","AK Grid.csv"))
+
+us_states.AK.grid.sf <- st_as_sf(us_states.AK.grid,coords = c("x","y"),crs=4269)
+tm_shape(us_states.AK.grid.sf)+
+  tm_dots()+
+  tm_shape(us_states.CONUS)+
+  tm_borders()
+
+####Build 0.01 degree x 0.01 degree Lat/Lon Grid for Hawaii####
+#0.0174532925199433/0.01
+
+st_bbox(us_states.HI)           #xmin       ymin       xmax       ymax 
+                          #-178.44359   18.86546 -154.75579   28.51727 
+st_crs(us_states.HI)
+us_states.HI.ext <- ext(us_states.HI)
+us_states.HI.grid<- raster(xmn = -178.45,xmx = -154.75,ymn=18.86,ymx = 28.52,crs=4269,res=c(0.01,0.01))
+
+res(us_states.HI.grid)
+us_states.HI.grid
+
+st_crs(us_states.HI.grid)
+us_states.HI.grid <- as.data.frame(rasterToPoints(us_states.HI.grid))
+us_states.HI.grid$index <- rownames(us_states.HI.grid)
+write.csv(us_states.HI.grid,here::here("Data","HI Grid.csv"))
+
+us_states.HI.grid.sf <- st_as_sf(us_states.HI.grid,coords = c("x","y"),crs=4269)
+tm_shape(us_states.HI.grid.sf)+
+  tm_dots()+
+  tm_shape(us_states.CONUS)+
+  tm_borders()
+
+####Build 0.01 degree x 0.01 degree Lat/Lon Grid for PR####
+#0.0174532925199433/0.01
+
+st_bbox(us_states.PR)     #xmin      ymin      xmax      ymax 
+                      #-67.99875  17.83151 -65.16850  18.56800 
+st_crs(us_states.PR)
+us_states.PR.ext <- ext(us_states.PR)
+us_states.PR.grid<- raster(xmn = -68.00,xmx = -65.16,ymn=17.83,ymx = 18.57,crs=4269,res=c(0.01,0.01))
+
+res(us_states.PR.grid)
+us_states.PR.grid
+
+st_crs(us_states.PR.grid)
+us_states.PR.grid <- as.data.frame(rasterToPoints(us_states.PR.grid))
+us_states.PR.grid$index <- rownames(us_states.PR.grid)
+write.csv(us_states.PR.grid,here::here("Data","PR Grid.csv"))
+
+us_states.PR.grid.sf <- st_as_sf(us_states.PR.grid,coords = c("x","y"),crs=4269)
+tm_shape(us_states.PR.grid.sf)+
+  tm_dots()+
+  tm_shape(us_states.CONUS)+
+  tm_borders()
