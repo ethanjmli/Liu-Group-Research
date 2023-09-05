@@ -1233,3 +1233,105 @@ tm_shape(us_states.PR.grid.sf)+
   tm_dots()+
   tm_shape(us_states.CONUS)+
   tm_borders()
+
+
+#####Map EPA Data#####
+PM_speciation <- read.csv(here::here("Data","PM2.5 Speciation",list.filenames[[file]]))
+
+list.files(here::here("Data","PM2.5 Speciation"))
+list.filenames <- list.files(here::here("Data","PM2.5 Speciation"))
+PM_speciation_list <- list()
+for(file in 1:length(list.filenames)){
+  PM_speciation <- read.csv(here::here("Data","PM2.5 Speciation",list.filenames[[file]]))
+  PM_speciation <- PM_speciation %>% dplyr::select(Latitude,Longitude,Parameter.Name,Date.Local,Units.of.Measure,Arithmetic.Mean,Local.Site.Name,Address,State.Name)
+  PM_speciation_list[[file]] <- PM_speciation
+  print(file)
+}
+
+PM_speciation_reduced <- bind_rows(PM_speciation_list)
+table(PM_speciation_reduced$Parameter.Name)
+PM_speciation_reduced <- PM_speciation_reduced %>% filter(Parameter.Name %in% c("Total Nitrate PM2.5 LC",
+                                                      "Sulfate PM2.5 LC",
+                                                      "OC PM2.5 LC TOT",
+                                                      "EC CSN PM2.5 LC TOT",
+                                                      "EC PM2.5 LC TOT"))
+
+saveRDS(object = PM_speciation_reduced,file = here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
+
+list.files(here::here("Data","PM2.5 Speciation"))
+file.exists(here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
+speciation_file <- here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds")
+PM_speciation_reduced_new <- readRDS(speciation_file)
+all.equal(PM_speciation_reduced,PM_speciation_reduced_new)
+
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season = hydroTSM::time2season(as.Date(Date.Local),out.fmt="seasons"))
+PM_speciation_reduced_new$Date.Local <- as.Date(PM_speciation_reduced_new$Date.Local)
+class(PM_speciation_reduced_new$Arithmetic.Mean)
+class(PM_speciation_reduced_new$Date.Local)
+lubridate::month(PM_speciation_reduced_new$Date.Local,label=TRUE)
+lubridate::year(PM_speciation_reduced_new$Date.Local)
+
+year_and_season <- function(Date,Season){
+  month <- lubridate::month(Date,label=TRUE)
+  year <- lubridate::year(Date)
+  year <- ifelse(month %in% c("Jan","Feb"),year-1,year)
+  season <- paste(Season,year)
+  return(season)
+}
+
+year_and_season(PM_speciation_reduced_new$Date.Local,PM_speciation_reduced_new$Season)
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season.Year = year_and_season(Date.Local,Season))
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% group_by(Latitude,Longitude,Parameter.Name,Season.Year) %>% summarize(mean = mean(Arithmetic.Mean),Units.of.Measure = unique(Units.of.Measure))
+PM_speciation_reduced_new.sf <- st_as_sf(PM_speciation_reduced_new,coords=c("Longitude","Latitude"),crs=4269)
+PM_speciation_reduced_new.sf <- PM_speciation_reduced_new.sf %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
+
+speciation_list <- list()
+unique(PM_speciation_reduced_new.sf$Season.Year)
+unique(PM_speciation_reduced_new.sf$Parameter.Name)
+
+for(i in 1:length(unique(PM_speciation_reduced_new.sf$Season.Year))){
+  for(j in 1:length(unique(PM_speciation_reduced_new.sf$Parameter.Name))){
+  PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new.sf %>% dplyr::filter(Season.Year == unique(PM_speciation_reduced_new.sf$Season.Year)[i],
+                                                                                        Parameter.Name == unique(PM_speciation_reduced_new.sf$Parameter.Name)[j])
+  if(nrow(PM_speciation_reduced_new.sf_subset)==0) next
+  #M_speciation_reduced_new.sf_subset$cat <- cut(PM_speciation_reduced_new.sf_subset$mean,breaks = quantile(PM_speciation_reduced_new.sf_subset$mean),labels=FALSE)
+  speciation_list <- append(speciation_list,list(PM_speciation_reduced_new.sf_subset))
+  }
+}
+
+view(speciation_list[[1]])
+
+us_bbox <- st_bbox(us_states)
+us_bbox[1]
+us_bbox[2]<-10
+us_bbox[3] <- 0
+us_bbox[4]
+us_bbox
+
+us_states <- st_crop(us_states,c(xmin = -179.23109,ymin = 0,xmax = -60, ymax = 71.43979))
+st_crs(us_states)
+st_crs(speciation_list[[1]])
+
+tm_shape(us_states)+
+  tm_borders()+
+tm_shape(speciation_list[[1]])+
+  tm_dots(col = "mean",
+          size=0.4,
+          breaks = quantile(speciation_list[[1]]$mean),
+          title = paste0(unique(speciation_list[[1]]$Parameter.Name),"\n",unique(speciation_list[[1]]$Units.of.Measure)))+
+tm_layout(
+  main.title = paste(unique(speciation_list[[1]]$Season.Year), unique(speciation_list[[1]]$Parameter.Name)),
+  main.title.position = "center"
+)
+
+
+
+for(i in 1:length(speciation_list)){
+  tm_shape(speciation_list[[i]])+
+    tm_dots(col = "mean",
+            size=0.4,
+            breaks = quantile(speciation_list[[1]]$mean),
+            title = unique(speciation_list[[1]]$Parameter.Name))+
+  tm_shape(us_states)+
+    tm_borders()
+}
