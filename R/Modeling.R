@@ -1236,6 +1236,7 @@ tm_shape(us_states.PR.grid.sf)+
 
 
 #####Map EPA Data#####
+#######Create combined EPA Speciation Data file#####
 PM_speciation <- read.csv(here::here("Data","PM2.5 Speciation",list.filenames[[file]]))
 
 list.files(here::here("Data","PM2.5 Speciation"))
@@ -1258,11 +1259,15 @@ PM_speciation_reduced <- PM_speciation_reduced %>% filter(Parameter.Name %in% c(
 
 saveRDS(object = PM_speciation_reduced,file = here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
 
+
+#######Mapping#######
+
 list.files(here::here("Data","PM2.5 Speciation"))
 file.exists(here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
 speciation_file <- here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds")
 PM_speciation_reduced_new <- readRDS(speciation_file)
 all.equal(PM_speciation_reduced,PM_speciation_reduced_new)
+
 
 PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season = hydroTSM::time2season(as.Date(Date.Local),out.fmt="seasons"))
 PM_speciation_reduced_new$Date.Local <- as.Date(PM_speciation_reduced_new$Date.Local)
@@ -1275,15 +1280,28 @@ year_and_season <- function(Date,Season){
   month <- lubridate::month(Date,label=TRUE)
   year <- lubridate::year(Date)
   year <- ifelse(month %in% c("Jan","Feb"),year-1,year)
-  season <- paste(Season,year)
+  season <- paste(year,Season)
   return(season)
 }
 
 year_and_season(PM_speciation_reduced_new$Date.Local,PM_speciation_reduced_new$Season)
 PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season.Year = year_and_season(Date.Local,Season))
 PM_speciation_reduced_new <- PM_speciation_reduced_new %>% group_by(Latitude,Longitude,Parameter.Name,Season.Year) %>% summarize(mean = mean(Arithmetic.Mean),Units.of.Measure = unique(Units.of.Measure))
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
 PM_speciation_reduced_new.sf <- st_as_sf(PM_speciation_reduced_new,coords=c("Longitude","Latitude"),crs=4269)
-PM_speciation_reduced_new.sf <- PM_speciation_reduced_new.sf %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
+#PM_speciation_reduced_new.sf <- PM_speciation_reduced_new.sf %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
+
+
+species.quantile.list <- list()
+for(i in 1:length(unique(PM_speciation_reduced_new$Parameter.Name))){
+  species.quantile <- PM_speciation_reduced_new %>% 
+    dplyr::filter(Parameter.Name == unique(PM_speciation_reduced_new$Parameter.Name)[i]) 
+  species.quantile <- quantile(species.quantile$mean)
+  print(unique(PM_speciation_reduced_new$Parameter.Name)[i])
+  print(species.quantile)
+  species.quantile.list[[i]] <- species.quantile
+}
+names(species.quantile.list) <- unique(PM_speciation_reduced_new$Parameter.Name)
 
 speciation_list <- list()
 unique(PM_speciation_reduced_new.sf$Season.Year)
@@ -1291,15 +1309,24 @@ unique(PM_speciation_reduced_new.sf$Parameter.Name)
 
 for(i in 1:length(unique(PM_speciation_reduced_new.sf$Season.Year))){
   for(j in 1:length(unique(PM_speciation_reduced_new.sf$Parameter.Name))){
-  PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new.sf %>% dplyr::filter(Season.Year == unique(PM_speciation_reduced_new.sf$Season.Year)[i],
+    PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new.sf %>% dplyr::filter(Season.Year == unique(PM_speciation_reduced_new.sf$Season.Year)[i],
                                                                                         Parameter.Name == unique(PM_speciation_reduced_new.sf$Parameter.Name)[j])
-  if(nrow(PM_speciation_reduced_new.sf_subset)==0) next
-  #M_speciation_reduced_new.sf_subset$cat <- cut(PM_speciation_reduced_new.sf_subset$mean,breaks = quantile(PM_speciation_reduced_new.sf_subset$mean),labels=FALSE)
-  speciation_list <- append(speciation_list,list(PM_speciation_reduced_new.sf_subset))
+    if(nrow(PM_speciation_reduced_new.sf_subset)==0) next
+    PM_speciation_reduced_new.sf_subset$cat <- cut(PM_speciation_reduced_new.sf_subset$mean,breaks = species.quantile.list[[j]],labels=FALSE)
+    speciation_list <- append(speciation_list,list(PM_speciation_reduced_new.sf_subset))
   }
 }
 
 view(speciation_list[[1]])
+colnames(speciation_list[[1]])
+speciation_list_names <- c()
+for(i in 1:length(speciation_list)){
+  speciation_list_names <- c(speciation_list_names, paste(unique(speciation_list[[i]]$Season.Year),unique(speciation_list[[i]]$Parameter.Name)))
+}
+
+view(speciation_list[[117]])
+names(speciation_list) <- speciation_list_names
+
 
 us_bbox <- st_bbox(us_states)
 us_bbox[1]
@@ -1330,8 +1357,8 @@ for(i in 1:length(speciation_list)){
   tm_shape(speciation_list[[i]])+
     tm_dots(col = "mean",
             size=0.4,
-            breaks = quantile(speciation_list[[1]]$mean),
-            title = unique(speciation_list[[1]]$Parameter.Name))+
+            breaks = quantile(speciation_list[[i]]$mean),
+            title = unique(speciation_list[[i]]$Parameter.Name))+
   tm_shape(us_states)+
     tm_borders()
 }
