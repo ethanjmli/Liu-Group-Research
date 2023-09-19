@@ -14,6 +14,10 @@ library(RColorBrewer)
 library(gridExtra)
 library(ggmap)
 library(hydroTSM)
+library(here)
+library(raster)
+library(sf)
+library(terra)
 
 tempcolorvector <- colorRampPalette(brewer.pal(11,"RdYlBu"))(1000)
 airpolcolorvector <- colorRampPalette(brewer.pal(11,"RdYlBu"))(1000)
@@ -34,7 +38,7 @@ tmap_options(check.and.fix = TRUE)
 #Projection = set by user: +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0
 
 #####Get shapefiles and boundaries#####
-crop_parameters_5c <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/five_counties.shp")
+crop_parameters_5c <- st_read(here::here("Data","ATL_shps_for_April","five_counties.shp"))
 cropLongLat_5c <- st_transform(crop_parameters_5c,crs = st_crs("+proj=longlat +datum=WGS84 +no_defs"))
 cropLongLat_5c <- st_make_valid(cropLongLat_5c)
 cropLongLat5c_small <- cropLongLat_5c[,9]
@@ -44,28 +48,43 @@ cropLongLat_5c <- cbind(cropLongLat_5c,ymod, xmod)
 rm(crop_parameters_5c)
 
 
-crop_parameters_zip <- st_read("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/ATL_shps_for_April/SelectedZipCode_ATL.shp")
+crop_parameters_zip <- st_read(here::here("Data","ATL_shps_for_April","expandedzip.shp"))
 cropLongLat_zip <- st_transform(crop_parameters_zip,crs = st_crs("+proj=longlat +datum=WGS84 +no_defs"))
-cropLongLatzip_small <- cropLongLat_zip[,10]
+#cropLongLatzip_small <- cropLongLat_zip[,10]
 colnames(cropLongLat_zip)[1]<-"ZIP Code"
-rm(crop_parameters_zip)
+
+plot(st_geometry(cropLongLat_zip))
+plot(st_geometry(cropLongLat5c_small))
+
+#####Function for Extracting Year and Season#####
+year_and_season <- function(Date,Season){
+  month <- lubridate::month(Date,label=TRUE)
+  year <- lubridate::year(Date)
+  year <- ifelse(month %in% c("Jan","Feb"),year-1,year)
+  season <- paste(year,Season)
+  return(season)
+}
 
 #####NDVI####
-setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/MOD13A2v6 500m NDVI 2002_01_01-2023_03_23/NDVI")
+list.files(here::here("Data","MOD13A2v6 500m NDVI 2002_01_01-2023_03_23","NDVI"))
+list.filenames <- list.files(here::here("Data","MOD13A2v6 500m NDVI 2002_01_01-2023_03_23","NDVI"))
+setwd(here::here("Data","MOD13A2v6 500m NDVI 2002_01_01-2023_03_23","NDVI"))
 
-NDVI <- stack(list.files())
+NDVI <- raster::stack(list.files())
 NDVI
 names(NDVI)
 NDVIdates <- as.Date(as.numeric(str_sub(names(NDVI),-3,-1))-1,
                             origin=paste0(str_sub(names(NDVI),-8,-5),"-01-01"))
-NDVI <- setZ(NDVI,NDVIdates,"Date")
+NDVIseason <- hydroTSM::time2season(NDVIdates,out.fmt = "seasons")
+NDVIyearseason <- year_and_season(NDVIdates,NDVIseason)
+NDVI <- setZ(NDVI,NDVIyearseason,"Year and Season")
 values(NDVI) <- values(NDVI)*0.0001
 NDVIyears <- format(NDVIdates,"%Y")
 NDVI <- stackApply(NDVI,NDVIyears,mean)
 
-NDVI <- crop(NDVI,cropLongLat5c_small)
-NDVI <- mask(NDVI, cropLongLat5c_small)
-NDVI_df <- data.frame(rasterToPoints(NDVI))
+NDVI_5c <- crop(NDVI,cropLongLat5c_small)
+NDVI_5c <- mask(NDVI_5c, cropLongLat5c_small)
+NDVI_df <- data.frame(rasterToPoints(NDVI_5c))
 colnames(NDVI_df)[3:ncol(NDVI_df)] <- unique(NDVIyears)
 NDVI_df <- NDVI_df[,c(-1,-2)]
 mean(NDVI_df$`2002`)
@@ -122,18 +141,19 @@ NDVI_ts<-ggplot(data=combined_NDVI_df,aes(x=date, y=NDVI,group=group,col=group))
     panel.grid.minor = element_blank(), #remove minor gridlines
     legend.background = element_rect(fill='transparent'), #transparent legend bg
     legend.box.background = element_rect(fill='transparent')) #transparent legend panel
-setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/GCC Poster Figures")
-ggsave("NDVI time series.png",NDVI_ts,dpi=300)
-write.csv(combined_NDVI_df,"16 day average NDVI datatable.csv")
+#setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/GCC Poster Figures")
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","NDVI time series.png"),NDVI_ts,dpi=300)
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","NDVI time series.pdf"),NDVI_ts,dpi=300)
+write.csv(combined_NDVI_df,here::here("Atlanta Project","Results_New","Workshop 2 Figures","16 day average NDVI datatable.csv"))
 
 ####LST####
-setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/MOD11A1v6 1km LST 2002_01_01 - 2023_03_23/LST_Day_1km")
+setwd(here::here("Data","MOD11A1v6 1km LST 2002_01_01 - 2023_03_23","LST_Day_1km"))
 LST <- stack(list.files())
 LSTdates <- as.Date(as.numeric(str_sub(names(LST),-3,-1))-1,
                                  origin=paste0(str_sub(names(LST),-8,-5),"-01-01"))
-7579/16
-LSTindices <- rep(1:474,each=16)
-LSTindices <- LSTindices[1:7579]
+#7579/16
+#LSTindices <- rep(1:474,each=16)
+#LSTindices <- LSTindices[1:7579]
 #LSTmonths <- format(LSTdates,"%Y-%m")
 #length(LSTmonths) == nlayers(LST)
 #LST <- stackApply(LST,LSTmonths,mean)
@@ -144,9 +164,9 @@ length(LSTyears) == nlayers(LST)
 LST <- stackApply(LST,LSTyears,mean)
 
 
-LST <- crop(LST,cropLongLat5c_small)
-LST <- mask(LST,cropLongLat5c_small)
-LST_df <- data.frame(rasterToPoints(LST))
+LST_5c <- crop(LST,cropLongLat5c_small)
+LST_5c <- mask(LST_5c,cropLongLat5c_small)
+LST_df <- data.frame(rasterToPoints(LST_5c))
 colnames(LST_df)[3:ncol(LST_df)] <- unique(LSTyears)
 LST_df <- LST_df[,c(-1,-2)]
 mean(LST_df$`2002`)
@@ -154,15 +174,15 @@ LST_df <- apply(LST_df,2,mean,na.rm=T)
 LST_df <- as.data.frame(LST_df)
 LST_df
 LST_df$date <- paste0(unique(LSTyears),"-01-01")
-LST_df$date <- as.Date(LST_df$date,format="%Y")
+LST_df$date <- as.Date(LST_df$date)
 LST_df$season <- time2season(LST_df$date,out.fmt="seasons")
 colnames(LST_df)[1]<-"LST"
 LST_df$group = "5c"
 LST_df$LST <- LST_df$LST*0.02-273
 
 
-LST_zip <- crop(LST,cropLongLatzip_small)
-LST_zip <- mask(LST_zip,cropLongLatzip_small)
+LST_zip <- crop(LST,cropLongLat_zip)
+LST_zip <- mask(LST_zip,cropLongLat_zip)
 LSTzip_df <- data.frame(rasterToPoints(LST_zip))
 colnames(LSTzip_df)[3:ncol(LSTzip_df)] <- unique(LSTyears)
 LSTzip_df <- LSTzip_df[,c(-1,-2)]
@@ -171,15 +191,15 @@ LSTzip_df <- apply(LSTzip_df,2,mean,na.rm=T)
 LSTzip_df <- as.data.frame(LSTzip_df)
 LSTzip_df
 LSTzip_df$date <- paste0(unique(LSTyears),"-01-01")
-LSTzip_df$date <- as.Date(LSTzip_df$date,format="%Y")
+LSTzip_df$date <- as.Date(LSTzip_df$date)
 LSTzip_df$season <- time2season(LSTzip_df$date,out.fmt="seasons")
 colnames(LSTzip_df)[1]<-"LST"
 LSTzip_df$group = "ZIP"
 LSTzip_df$LST <- LSTzip_df$LST*0.02-273
 
-combind_LST_df <- rbind(LST_df,LSTzip_df)
+combined_LST_df <- rbind(LST_df,LSTzip_df)
 
-LST_ts <- ggplot(data=combind_LST_df,aes(x=date, y=LST,group=group,col=group))+
+LST_ts <- ggplot(data=combined_LST_df,aes(x=date, y=LST,group=group,col=group))+
   # geom_line(data=cleandata1_2,mapping=aes(x=time,y=meanPM,col=Group))+
   geom_point()+
   geom_line()+
@@ -200,9 +220,11 @@ LST_ts <- ggplot(data=combind_LST_df,aes(x=date, y=LST,group=group,col=group))+
     panel.grid.minor = element_blank(), #remove minor gridlines
     legend.background = element_rect(fill='transparent'), #transparent legend bg
     legend.box.background = element_rect(fill='transparent')) #transparent legend panel
-setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/GCC Poster Figures")
-ggsave("LST time series.png",LST_ts,dpi=300)
 
+#ggsave("LST time series.png",LST_ts,dpi=300)
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","LST time series.png"),LST_ts,dpi=300)
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","LST time series.pdf"),LST_ts,dpi=300)
+write.csv(combined_LST_df,here::here("Atlanta Project","Results_New","Workshop 2 Figures","Annual average LST datatable.csv"))
 
 ####AOD####
 setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Raw AOD")
@@ -259,57 +281,56 @@ AODindices <- format(AODdates,"%Y-%m")
 
 
 ######
-setwd("C:/Users/EJLI4/OneDrive - Emory University/Liu Group Research/Masked AOD")
+setwd(here::here("Data","1km Cropped Atlanta AOD"))
 list.files()
 AOD <- stack(list.files())
 
-AODdates <- as.Date(as.numeric(substr(list.files(),11,13))-1,
-                    origin = as.Date(paste0(substr(list.files(),7,10),"-01-01")))
+AODdates <- as.Date(as.numeric(substr(list.files(),25,27))-1,
+                    origin = as.Date(paste0(substr(list.files(),21,24),"-01-01")))
 AODyears <- format(AODdates,"%Y")
 
 table(table(AODyears))
 unique(AODyears)
 which(table(AODyears)>1)
 which(is.na(table(AODyears)))
-AODindices <- AODyears
 
-AOD <- stackApply(AOD,AODindices,mean,na.rm=TRUE)
+AOD_annual <- stackApply(AOD,AODyears,mean,na.rm=TRUE)
 plot(AOD[[1]])
-AODdf <- data.frame(rasterToPoints(AOD))
-colnames(AODdf)[3:ncol(AODdf)] <- unique(AODindices)
-AODdf <- AODdf[,c(-1,-2)]
-mean(AODdf$`2002`,na.rm=T)
-AODdf <- apply(AODdf,2,mean,na.rm=T)
-AODdf <- as.data.frame(AODdf)
-AODdf
-AODdf$date <- paste0(unique(AODindices),"-01-01")
-AODdf$date <- as.Date(AODdf$date,format="%Y-%m-%d")
-AODdf$season <- time2season(AODdf$date,out.fmt="seasons")
-colnames(AODdf)[1]<-"AOD"
-AODdf$group = "5c"
+plot(AOD_annual[[1]])
+AOD_df <- data.frame(rasterToPoints(AOD_annual))
+colnames(AOD_df)[3:ncol(AOD_df)] <- unique(AODyears)
+AOD_df <- AOD_df[,c(-1,-2)]
+mean(AOD_df$`2002`,na.rm=T)
+AOD_df <- apply(AOD_df,2,mean,na.rm=T)
+AOD_df <- as.data.frame(AOD_df)
+AOD_df
+AOD_df$date <- paste0(unique(AODyears),"-01-01")
+AOD_df$date <- as.Date(AOD_df$date)
+AOD_df$season <- time2season(AOD_df$date,out.fmt="seasons")
+colnames(AOD_df)[1]<-"AOD"
+AOD_df$group = "5c"
 
 
-AODzip <- crop(AOD,cropLongLatzip_small)
-AODzip <- mask(AODzip,cropLongLatzip_small)
+AODzip <- crop(AOD_annual,st_transform(cropLongLat_zip,crs=st_crs(AOD_annual)))
+AODzip <- mask(AODzip,st_transform(cropLongLat_zip,crs=st_crs(AOD_annual)))
+plot(AODzip[[1]])
 AODzipdf <- data.frame(rasterToPoints(AODzip))
-colnames(AODzipdf)[3:ncol(AODzipdf)] <- unique(AODindices)
+colnames(AODzipdf)[3:ncol(AODzipdf)] <- unique(AODyears)
 AODzipdf <- AODzipdf[,c(-1,-2)]
 mean(AODzipdf$`2002`)
 AODzipdf <- apply(AODzipdf,2,mean,na.rm=T)
 AODzipdf <- as.data.frame(AODzipdf)
 AODzipdf
-AODzipdf$date <- paste0(unique(AODindices),"-01-01")
-AODzipdf$date <- as.Date(AODzipdf$date,format="%Y-%m-%d")
+AODzipdf$date <- paste0(unique(AODyears),"-01-01")
+AODzipdf$date <- as.Date(AODzipdf$date)
 AODzipdf$season <- time2season(AODzipdf$date,out.fmt="seasons")
 colnames(AODzipdf)[1]<-"AOD"
 AODzipdf$group = "ZIP"
 
 
-combind_AOD_df <- rbind(AODdf,AODzipdf)
-write.csv(combind_AOD_df,"Monthly Average AOD datatable.csv")
+combined_AOD_df <- rbind(AOD_df,AODzipdf)
 
-
-AODts <- ggplot(data=combind_AOD_df,aes(x=date, y=AOD,group=group,col=group))+
+AOD_ts <- ggplot(data=combined_AOD_df,aes(x=date, y=AOD,group=group,col=group))+
   # geom_line(data=cleandata1_2,mapping=aes(x=time,y=meanPM,col=Group))+
   geom_point()+
   geom_line()+
@@ -331,13 +352,12 @@ AODts <- ggplot(data=combind_AOD_df,aes(x=date, y=AOD,group=group,col=group))+
     panel.grid.minor = element_blank(), #remove minor gridlines
     legend.background = element_rect(fill='transparent'), #transparent legend bg
     legend.box.background = element_rect(fill='transparent')) #transparent legend panel
-setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/GCC Poster Figures")
-ggsave("AOD time series.png",AODts,dpi=300)
 
-ggplot(data=combind_AOD_df,aes(y=AOD,group=group,col=group))+
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","AOD time series.png"),AOD_ts,dpi=300)
+ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","AOD time series.pdf"),AOD_ts,dpi=300)
+write.csv(combined_AOD_df,here::here("Atlanta Project","Results_New","Workshop 2 Figures","Annual Average AOD datatable.csv"))
+
+ggplot(data=combined_AOD_df,aes(y=AOD,group=group,col=group))+
   geom_boxplot()
 
-setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results")
-ggsave("Annual AOD time series.png",AODts,dpi=300)
-ggsave("Annual LST time series.png",LST_ts,dpi=300)
-ggsave("Annual NDVI time series.png",NDVI_ts,dpi=300)
+
