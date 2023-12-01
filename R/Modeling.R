@@ -1,4 +1,4 @@
-library(MODIStsp) #Foxr getting MODIS data
+library(MODIStsp) #For getting MODIS data
 library(ggplot2) #For plotting maps
 library(raster) #For reading rasters
 #library(rgdal) #readOGR()
@@ -1256,7 +1256,10 @@ PM_speciation_reduced <- PM_speciation_reduced %>%
   filter(Parameter.Name %in% c("Total Nitrate PM2.5 LC",
                                "Sulfate PM2.5 LC",
                                "OC PM2.5 LC TOR",
-                               "EC PM2.5 LC TOR"))
+                               "EC PM2.5 LC TOR",
+                               "Reconstructed Mass PM2.5 LC")) %>%
+  mutate(Arithmetic.Mean = case_when(Arithmetic.Mean < 0 ~ 0,
+                                     Arithmetic.Mean >=0 ~ Arithmetic.Mean))
 
 saveRDS(object = PM_speciation_reduced,file = here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
 
@@ -1270,7 +1273,8 @@ PM_speciation_reduced_new <- readRDS(speciation_file)
 #all.equal(PM_speciation_reduced,PM_speciation_reduced_new)
 
 
-PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season = hydroTSM::time2season(as.Date(Date.Local),out.fmt="seasons"))
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% 
+  mutate(Season = hydroTSM::time2season(as.Date(Date.Local),out.fmt="seasons"))
 PM_speciation_reduced_new$Date.Local <- as.Date(PM_speciation_reduced_new$Date.Local)
 summary(PM_speciation_reduced_new)
 table(PM_speciation_reduced_new$Parameter.Name)
@@ -1289,23 +1293,31 @@ year_and_season <- function(Date,Season){
 #year_and_season(PM_speciation_reduced_new$Date.Local,PM_speciation_reduced_new$Season)
 PM_speciation_reduced_new <- PM_speciation_reduced_new %>% mutate(Season.Year = year_and_season(Date.Local,Season))
 PM_speciation_reduced_new <- PM_speciation_reduced_new %>% group_by(Latitude,Longitude,Parameter.Name,Season.Year) %>% summarize(mean = mean(Arithmetic.Mean),Units.of.Measure = unique(Units.of.Measure))
-PM_speciation_reduced_new <- PM_speciation_reduced_new %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT")) %>% arrange(Parameter.Name,Season.Year)
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% 
+  arrange(Parameter.Name,Season.Year)
 PM_speciation_reduced_new.sf <- st_as_sf(PM_speciation_reduced_new,coords=c("Longitude","Latitude"),crs=4269)
 #PM_speciation_reduced_new.sf <- PM_speciation_reduced_new.sf %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
 
 
-#Create quantiles for each PM2.5 species
-species.quantile.list <- list()
+#Create breaks for each PM2.5 species
+species.breaks.list <- list()
 
 for(i in 1:length(unique(PM_speciation_reduced_new$Parameter.Name))){
-  species.quantile <- PM_speciation_reduced_new %>% 
+  species.breaks <- PM_speciation_reduced_new %>% 
     dplyr::filter(Parameter.Name == unique(PM_speciation_reduced_new$Parameter.Name)[i]) 
-  species.quantile <- quantile(species.quantile$mean)
+  species.breaks <- range(species.breaks$mean)
   print(unique(PM_speciation_reduced_new$Parameter.Name)[i])
-  print(species.quantile)
-  species.quantile.list[[i]] <- species.quantile
+  print(species.breaks)
+  species.breaks.list[[i]] <- species.breaks
 }
-names(species.quantile.list) <- unique(PM_speciation_reduced_new$Parameter.Name)
+names(species.breaks.list) <- unique(PM_speciation_reduced_new$Parameter.Name)
+species.breaks.list[[1]]<-c(seq(species.breaks.list[[1]][1],species.breaks.list[[1]][2],0.4), species.breaks.list[[1]][2])
+species.breaks.list[[2]]<-c(seq(species.breaks.list[[2]][1],species.breaks.list[[2]][2],1), species.breaks.list[[2]][2])
+species.breaks.list[[3]]<-c(seq(species.breaks.list[[3]][1],species.breaks.list[[3]][2],1), species.breaks.list[[3]][2])
+species.breaks.list[[4]]<-c(seq(species.breaks.list[[4]][1],species.breaks.list[[4]][2],1), species.breaks.list[[4]][2])
+species.breaks.list[[5]]<-c(seq(species.breaks.list[[5]][1],species.breaks.list[[5]][2],1), species.breaks.list[[5]][2])
+
+
 
 speciation_list <- list()
 unique(PM_speciation_reduced_new.sf$Season.Year)
@@ -1313,8 +1325,9 @@ unique(PM_speciation_reduced_new.sf$Parameter.Name)
 
 for(i in 1:length(unique(PM_speciation_reduced_new.sf$Parameter.Name))){
   for(j in 1:length(unique(PM_speciation_reduced_new.sf$Season.Year))){
-    PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new.sf %>% dplyr::filter(Parameter.Name == unique(PM_speciation_reduced_new.sf$Parameter.Name)[i],
-                                                                                        Season.Year == unique(PM_speciation_reduced_new.sf$Season.Year)[j])
+    PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new.sf %>%
+      dplyr::filter(Parameter.Name == unique(PM_speciation_reduced_new.sf$Parameter.Name)[i],
+                    Season.Year == unique(PM_speciation_reduced_new.sf$Season.Year)[j])
     if(nrow(PM_speciation_reduced_new.sf_subset)==0) next
     PM_speciation_reduced_new.sf_subset$cat <- cut(PM_speciation_reduced_new.sf_subset$mean,breaks = species.quantile.list[[i]],labels=FALSE)
     speciation_list <- append(speciation_list,list(PM_speciation_reduced_new.sf_subset))
@@ -1351,7 +1364,10 @@ tm_shape(us_states)+
 tm_shape(speciation_list[[120]])+
   tm_dots(col = "mean",
           size=0.4,
-          breaks = species.quantile.list[[2]],
+          shape = 21,
+          border.col="black",
+          style = "equal",
+          #breaks = species.quantile.list[[2]],
           title = paste0(unique(speciation_list[[120]]$Parameter.Name),"\n",unique(speciation_list[[120]]$Units.of.Measure)))+
 tm_layout(
   main.title = names(speciation_list)[120],
@@ -1367,7 +1383,10 @@ for(i in 1:length(speciation_list)){
   tm_shape(speciation_list[[i]])+
     tm_dots(col = "mean",
             size=0.4,
-            breaks =  species.quantile.list[[name]],
+            shape = 21,
+            border.col="black",
+            style = "equal",
+            #breaks =  species.quantile.list[[name]],
             title = paste0(unique(speciation_list[[i]]$Parameter.Name),"\n",unique(speciation_list[[i]]$Units.of.Measure))
             )+
   tm_layout(
@@ -1375,3 +1394,238 @@ for(i in 1:length(speciation_list)){
     main.title.position = "center")
   tmap_save(map,here::here("Atlanta Project","Results_New","Speciation Maps",paste0(names(speciation_list)[[i]],".png")))
 }
+
+
+#####Texas Mapping####
+options(tigris_use_cache = TRUE)
+Harris <- tigris::counties(state="Texas",cb=FALSE) %>%
+  filter(NAME == "Harris")
+
+Texas <- tigris::states() %>%
+  filter(NAME == "Texas")
+
+tm_shape(Texas)+
+  tm_borders()+
+  tm_shape(Harris)+
+  tm_borders()
+
+
+list.files(here::here("Data","PM2.5 Speciation"))
+file.exists(here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds"))
+speciation_file <- here::here("Data","PM2.5 Speciation","Aggregated Speciation 2000-2022.rds")
+PM_speciation_reduced_new <- readRDS(speciation_file)
+
+PM_speciation_reduced_new <- PM_speciation_reduced_new %>% 
+  mutate(Season = hydroTSM::time2season(as.Date(Date.Local),out.fmt="seasons"))
+PM_speciation_reduced_new$Date.Local <- as.Date(PM_speciation_reduced_new$Date.Local)
+summary(PM_speciation_reduced_new)
+table(PM_speciation_reduced_new$Parameter.Name)
+
+#lubridate::month(PM_speciation_reduced_new$Date.Local,label=TRUE)
+#lubridate::year(PM_speciation_reduced_new$Date.Local)
+
+year_and_season <- function(Date,Season){
+  month <- lubridate::month(Date,label=TRUE)
+  year <- lubridate::year(Date)
+  year <- ifelse(month %in% c("Jan","Feb"),year-1,year)
+  season <- paste(year,Season)
+  return(season)
+}
+
+#year_and_season(PM_speciation_reduced_new$Date.Local,PM_speciation_reduced_new$Season)
+PM_speciation_reduced_new.sf <- PM_speciation_reduced_new %>% 
+  mutate(Season.Year = year_and_season(Date.Local,Season))%>% 
+  group_by(Latitude,Longitude,Parameter.Name,Season.Year) %>% 
+  summarize(mean = mean(Arithmetic.Mean),Units.of.Measure = unique(Units.of.Measure))%>% 
+  arrange(Parameter.Name,Season.Year) %>%
+  st_as_sf(coords=c("Longitude","Latitude"),crs=4269)
+#PM_speciation_reduced_new.sf <- PM_speciation_reduced_new.sf %>% dplyr::filter(!(Parameter.Name == "EC CSN PM2.5 LC TOT"))
+PM_speciation_reduced_new_Harris.sf <- st_crop(PM_speciation_reduced_new.sf,Harris)
+table(PM_speciation_reduced_new_Harris.sf$Parameter.Name)
+
+
+#Create breaks for each PM2.5 species
+species.breaks.list <- list()
+
+for(i in 1:length(unique(PM_speciation_reduced_new_Harris.sf$Parameter.Name))){
+  species.breaks <- PM_speciation_reduced_new_Harris.sf %>% 
+    dplyr::filter(Parameter.Name == unique(Parameter.Name)[i]) 
+  species.breaks.bins <- seq(min(range(species.breaks$mean)),max(range(species.breaks$mean)),by = (max(range(species.breaks$mean))-min(range(species.breaks$mean)))/4)
+  print(unique(PM_speciation_reduced_new_Harris.sf$Parameter.Name)[i])
+  print(species.breaks.bins)
+  species.breaks.list[[i]] <- species.breaks.bins
+}
+names(species.breaks.list) <- unique(PM_speciation_reduced_new_Harris.sf$Parameter.Name)
+# species.breaks.list[[1]]<-c(seq(species.breaks.list[[1]][1],species.breaks.list[[1]][2],0.4), species.breaks.list[[1]][2])
+# species.breaks.list[[2]]<-c(seq(species.breaks.list[[2]][1],species.breaks.list[[2]][2],1), species.breaks.list[[2]][2])
+# species.breaks.list[[3]]<-c(seq(species.breaks.list[[3]][1],species.breaks.list[[3]][2],1), species.breaks.list[[3]][2])
+# species.breaks.list[[4]]<-c(seq(species.breaks.list[[4]][1],species.breaks.list[[4]][2],1), species.breaks.list[[4]][2])
+# species.breaks.list[[5]]<-c(seq(species.breaks.list[[5]][1],species.breaks.list[[5]][2],1), species.breaks.list[[5]][2])
+
+
+
+
+speciation_list <- list()
+unique(PM_speciation_reduced_new_Harris.sf$Season.Year)
+unique(PM_speciation_reduced_new_Harris.sf$Parameter.Name)
+
+for(i in 1:length(unique(PM_speciation_reduced_new_Harris.sf$Parameter.Name))){
+  for(j in 1:length(unique(PM_speciation_reduced_new_Harris.sf$Season.Year))){
+    
+    PM_speciation_reduced_new.sf_subset <- PM_speciation_reduced_new_Harris.sf %>%
+      dplyr::filter(Parameter.Name == unique(Parameter.Name)[i],
+                    Season.Year == unique(Season.Year)[j])
+    
+    if(nrow(PM_speciation_reduced_new.sf_subset)==0) next
+    
+    speciation_list <- append(speciation_list,list(PM_speciation_reduced_new.sf_subset))
+    print(unique(PM_speciation_reduced_new.sf$Parameter.Name)[i])
+    print(unique(PM_speciation_reduced_new.sf$Season.Year)[j])
+  }
+}
+
+view(speciation_list[[1]])
+view(speciation_list[[200]])
+colnames(speciation_list[[1]])
+speciation_list_names <- c()
+for(i in 1:length(speciation_list)){
+  speciation_list_names <- c(speciation_list_names, paste(unique(speciation_list[[i]]$Season.Year),unique(speciation_list[[i]]$Parameter.Name)))
+}
+
+view(speciation_list[[155]])
+speciation_list_names[155]
+names(speciation_list) <- speciation_list_names
+
+decennial_2020_vars <- load_variables(
+  year = 2020, 
+  "pl", 
+  cache = TRUE
+)
+
+race_variables <- c(white = "P1_003N",
+                    black = "P1_004N",
+                    american_indian = "P1_005N",
+                    asian = "P1_006N",
+                    native_hi_pi = "P1_007N",
+                    other = "P1_008N",
+                    multirace = "P1_009N")
+
+census_data <- get_decennial(
+  geography = "tract",
+  state = "Texas",
+  county = 201,
+  variables = race_variables,
+  summary_var = "P1_001N",
+  year = 2020,
+  geometry=TRUE,
+) %>%
+  mutate(proportion = value/summary_value)
+
+Harris_not_white <- census_data %>%
+  filter(variable == "white") %>%
+  mutate(not_white = summary_value - value,
+         proportion_not_white = not_white/summary_value)
+
+tm_shape(Harris_not_white)+
+  tm_fill(col="proportion_not_white")+
+  tm_borders()
+
+for(i in 1:length(speciation_list)){
+  name <- str_sub(names(speciation_list)[[i]],13,-1)
+  map <- 
+    tm_shape(Harris)+
+      tm_borders()+
+    tm_shape(Harris_not_white)+
+      tm_fill(col="proportion_not_white",
+              title = "Proportion\nNot White",
+            pal = brewer.pal(n=5,name = "Purples"))+
+      tm_borders()+
+    tm_shape(speciation_list[[i]])+
+      tm_dots(col = "mean",
+            size=0.4,
+            shape = 21,
+            border.col="black",
+            breaks =  species.breaks.list[[name]],
+            title = paste0(unique(speciation_list[[i]]$Parameter.Name),"\n",unique(speciation_list[[i]]$Units.of.Measure))
+    )+
+    
+    tm_layout(
+      main.title = names(speciation_list)[i],
+      main.title.position = "center",
+      legend.text.size = 0.6,
+      legend.title.size = 0.8)
+  tmap_save(map,here::here("Atlanta Project","Results_New","Harris Speciation Maps",paste0(names(speciation_list)[[i]],".png")))
+}
+
+
+#####Texas Time Series####
+time_series_list <- list()
+
+PM_speciation_reduced_new_Texas.sf <- PM_speciation_reduced_new %>%
+  st_as_sf(coords=c("Longitude","Latitude"),crs=4269) %>%
+  st_intersection(Texas)
+
+time_series_list <- split(PM_speciation_reduced_new_Texas.sf,list(PM_speciation_reduced_new_Texas.sf$Local.Site.Name,PM_speciation_reduced_new_Texas.sf$Parameter.Name))
+
+# for(i in 1:length(unique(PM_speciation_reduced_new_Texas.sf$Local.Site.Name))){
+#   unique.site <- PM_speciation_reduced_new_Texas.sf %>%
+#     filter(Local.Site.Name == unique(PM_speciation_reduced_new_Texas.sf$Local.Site.Name)[i])
+#   time_series_list[[i]] <- unique.site
+#   print(i)
+# }
+# 
+# time_series_list_2 <- list()
+# 
+# for(i in 1:length(time_series_list)){
+#   for(j in unique(time_series_list[[j]]$Parameter.Name)){
+#     time_series_list_2 <- time_series_list[[i]]
+#   }
+# }
+view(time_series_list[[3]])
+summary(time_series_list[[3]])
+
+for(i in 1:length(time_series_list)){
+  time_series_list[[i]]$Season.Year <- year_and_season(time_series_list[[i]]$Date.Local,time_series_list[[i]]$Season)
+}
+
+for(i in 1:length(time_series_list)){
+  time_series_list[[i]] <- time_series_list[[i]] %>% 
+  group_by(Season.Year) %>% 
+  summarize(mean = mean(Arithmetic.Mean),
+            Units.of.Measure = unique(Units.of.Measure), 
+            Local.Site.Name = unique(Local.Site.Name),
+            Parameter.Name = unique(Parameter.Name),
+            Address = unique(Address),
+            Date.Local = median(Date.Local),
+            Season = unique(Season))
+}
+
+for(i in 1:length(time_series_list)){
+  if(nrow(time_series_list[[i]]) ==0) next
+  time_series_plot <- 
+    ggplot(data=time_series_list[[i]],aes(x=Date.Local, y=mean, group = Season, col = Season))+
+    # geom_line(data=cleandata1_2,mapping=aes(x=time,y=meanPM,col=Group))+
+    geom_point()+
+    geom_line()+
+    
+    # geom_text(data=cleandata1_2,aes(x=time, y=meanPM,fill=Group,label=Location), vjust=1.6, color="black",
+    #        position = position_dodge(0.9), size=3.5)+
+    labs(title = paste("Time Series of", unique(time_series_list[[i]]$Parameter.Name), "at",unique(time_series_list[[i]]$Local.Site.Name)),
+         y = paste0(unique(time_series_list[[i]]$Parameter.Name), " (",unique(time_series_list[[i]]$Units.of.Measure),")"),
+         x = "Date")+
+    # scale_color_manual(name="Legend",
+    #                    labels = c("Metro Atlanta","Select ZIP Codes"),
+    #                    values=c("blue","red"))+
+    
+    theme(
+      panel.background = element_rect(fill='transparent'), #transparent panel bg
+      plot.background = element_rect(fill='transparent', color=NA), #transparent plot bg
+      panel.grid.major = element_blank(), #remove major gridlines
+      panel.grid.minor = element_blank(), #remove minor gridlines
+      legend.background = element_rect(fill='transparent'), #transparent legend bg
+      legend.box.background = element_rect(fill='transparent')) #transparent legend panel
+  ggsave(here::here("Atlanta Project","Results_New","Harris Speciation Time Series",paste(unique(time_series_list[[i]]$Parameter.Name), "at",unique(time_series_list[[i]]$Local.Site.Name),".png")),time_series_plot,dpi=300)
+}
+
+
+

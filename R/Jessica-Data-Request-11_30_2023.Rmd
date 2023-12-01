@@ -1,0 +1,131 @@
+---
+title: "Jessica-Data-Request-11_30_2023"
+output: html_document
+date: "2023-11-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(MODIStsp,
+               raster,
+               sf,
+               terra,
+               stars,
+               tidyverse,
+               tidycensus,
+               tmap,
+               RColorBrewer,
+               osmdata,
+               here)
+```
+
+Get File Lists
+```{r}
+NDVI_files<- list.files(here::here("Data","MOD13A2v6 500m NDVI 2002_01_01-2023_03_23","NDVI"))
+NDVI_files_2022 <- NDVI_files[grepl("2022",NDVI_files,fixed=TRUE)|grepl("2023",NDVI_files,fixed=TRUE)]
+
+LST_files <- list.files(here::here("Data","MOD11A1v6 1km LST 2002_01_01 - 2023_03_23","LST_Day_1km"))
+LST_files_2022 <- LST_files[grepl("2022",LST_files,fixed=TRUE)|grepl("2023",LST_files,fixed=TRUE)]
+
+AOD_files <- list.files(here::here("Data","Final AOD"))
+AOD_files_2022 <- AOD_files[grepl("^2022",AOD_files)|grepl(regex("^2023"),AOD_files)]
+```
+
+
+Create Raster Stacks
+```{r}
+AOD <- stack(here::here("Data","Final AOD",AOD_files_2022))
+names(AOD) <- AOD_files_2022
+
+NDVI <- stack(here::here("Data","MOD13A2v6 500m NDVI 2002_01_01-2023_03_23","NDVI",NDVI_files_2022)) %>%
+  projectRaster(crs="+proj=longlat +datum=NAD83 +no_defs")
+NDVI
+
+LST <- stack(here::here("Data","MOD11A1v6 1km LST 2002_01_01 - 2023_03_23","LST_Day_1km",LST_files_2022))
+LST
+
+```
+
+
+Extract Dates
+```{r}
+NDVIdates <- as.Date(as.numeric(str_sub(names(NDVI),-3,-1))-1,
+                     origin=paste0(str_sub(names(NDVI),-8,-5),"-01-01"))
+LSTdates <- as.Date(as.numeric(str_sub(names(LST),-3,-1))-1,
+                    origin=paste0(str_sub(names(LST),-8,-5),"-01-01"))
+AODdates <- as.Date(as.numeric(str_sub(names(AOD),6,8))-1,
+                    origin = as.Date(paste0(substr(names(AOD),2,5),"-01-01")))
+```
+Select Summer and Winter
+```{r}
+season <- function(dates){
+  months <- lubridate::month(dates)
+  seasons <- ifelse(months == 1|months == 12|months == 2, "winter",
+                    ifelse(months == 3|months == 4|months == 5, "spring",
+                           ifelse(months == 6|months == 7|months == 8, "summer",
+                                  "autumn")))
+  return(seasons)
+}
+
+year_and_season <- function(Date,Season){
+  month <- lubridate::month(Date,label=TRUE)
+  year <- lubridate::year(Date)
+  corrected_year <- ifelse(month %in% c("Jan","Feb"),year-1,year)
+  season <- paste(corrected_year,Season)
+  return(season)
+}
+
+AODseasons <- season(AODdates)
+LSTseasons <- season(LSTdates)
+NDVIseasons <- season(NDVIdates)
+
+AOD_year_and_season <- year_and_season(AODdates, AODseasons)
+LST_year_and_season <- year_and_season(LSTdates, LSTseasons)
+NDVI_year_and_season <- year_and_season(NDVIdates, NDVIseasons)
+
+AOD_summer <- AOD[[which(AOD_year_and_season == "2022 summer")]]
+AOD_winter <- AOD[[which(AOD_year_and_season == "2022 winter")]]
+
+LST_summer <- LST[[which(LST_year_and_season == "2022 summer")]]
+LST_winter <- LST[[which(LST_year_and_season == "2022 winter")]]
+
+NDVI_summer <- NDVI[[which(NDVI_year_and_season == "2022 summer")]]
+NDVI_winter <- NDVI[[which(NDVI_year_and_season == "2022 winter")]]
+```
+
+
+
+
+Create 16-day stacking indices
+```{r}
+nlayers(AOD_summer)/16
+AOD_summer_indices <- rep(1:6,each=16)
+AOD_summer_indices <- AOD_summer_indices[1:nlayers(AOD_summer)]
+AOD_summer <- stackApply(AOD_summer, AOD_summer_indices, mean)
+
+nlayers(AOD_winter)/16
+AOD_winter_indices <- rep(1:6,each=16)
+AOD_winter_indices <- AOD_winter_indices[1:nlayers(AOD_winter)]
+AOD_winter <- stackApply(AOD_winter, AOD_winter_indices, mean)
+
+nlayers(LST_summer)/16
+LST_summer_indices <- rep(1:6,each=16)
+LST_summer_indices <- LST_summer_indices[1:nlayers(LST_summer)]
+LST_summer <- stackApply(LST_summer, LST_summer_indices, mean)
+
+nlayers(LST_winter)/16
+LST_winter_indices <- rep(1:6,each=16)
+LST_winter_indices <- LST_winter_indices[1:nlayers(LST_winter)]
+LST_winter <- stackApply(LST_winter, LST_winter_indices, mean)
+```
+
+
+```{r}
+
+```
+
+
+

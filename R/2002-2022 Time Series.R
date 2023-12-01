@@ -56,6 +56,13 @@ colnames(cropLongLat_zip)[1]<-"ZIP Code"
 plot(st_geometry(cropLongLat_zip))
 plot(st_geometry(cropLongLat5c_small))
 
+tm_shape(cropLongLat5c_small)+
+  tm_borders()+
+tm
+tm_scale_bar()+
+tm_compass()+
+tm_layout(frame=F)
+
 #####Function for Extracting Year and Season#####
 year_and_season <- function(Date,Season){
   month <- lubridate::month(Date,label=TRUE)
@@ -118,6 +125,8 @@ NDVI_df <- NDVI_df[-22,]
 NDVIzip_df <- NDVIzip_df[-22,]
 combined_NDVI_df <- rbind(NDVI_df,NDVIzip_df)
 
+combined_NDVI_df <- read.csv(here::here("Atlanta Project","Results_New","Workshop 2 Figures","Annual average NDVI datatable.csv"))%>%
+  mutate(date = as.Date(date))
 
 
 NDVI_ts<-ggplot(data=combined_NDVI_df,aes(x=date, y=NDVI,group=group,col=group))+
@@ -127,9 +136,10 @@ NDVI_ts<-ggplot(data=combined_NDVI_df,aes(x=date, y=NDVI,group=group,col=group))
   
   # geom_text(data=cleandata1_2,aes(x=time, y=meanPM,fill=Group,label=Location), vjust=1.6, color="black",
   #        position = position_dodge(0.9), size=3.5)+
-  labs(title = "Time Series of Annual Mean NDVI\nMetro Atlanta vs Select ZIP Codes, 2002-2022",
-       y = "NDVI",
-       x = "Date")+
+  labs(title = "Time Series of Annual Mean Greenspace (NDVI)\nMetro Atlanta vs Select ZIP Codes, 2002-2022",
+       y = "Greenspace (NDVI)",
+       x = "Year",
+       caption = "NDVI, or Normalized Difference Vegetation Index, is a metric which\nmeasures levels of vegetation by observing differences in the\ntypes of light being reflected from the ground")+
   scale_color_manual(name="Legend",
                      labels = c("Metro Atlanta","Select ZIP Codes"),
                      values=c("chartreuse3","saddlebrown"))+
@@ -144,7 +154,7 @@ NDVI_ts<-ggplot(data=combined_NDVI_df,aes(x=date, y=NDVI,group=group,col=group))
 #setwd("C:/Users/EJLI4/OneDrive - Emory University/3_Ethan_Atlanta_Project/Results/GCC Poster Figures")
 ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","NDVI time series.png"),NDVI_ts,dpi=300)
 ggsave(here::here("Atlanta Project","Results_New","Workshop 2 Figures","NDVI time series.pdf"),NDVI_ts,dpi=300)
-write.csv(combined_NDVI_df,here::here("Atlanta Project","Results_New","Workshop 2 Figures","16 day average NDVI datatable.csv"))
+write.csv(combined_NDVI_df,here::here("Atlanta Project","Results_New","Workshop 2 Figures","Annual average NDVI datatable.csv"))
 
 ####LST####
 setwd(here::here("Data","MOD11A1v6 1km LST 2002_01_01 - 2023_03_23","LST_Day_1km"))
@@ -329,6 +339,8 @@ AODzipdf$group = "ZIP"
 
 
 combined_AOD_df <- rbind(AOD_df,AODzipdf)
+combined_AOD_df <- read.csv(here::here("Atlanta Project","Results_New","Workshop 2 Figures","Annual Average AOD datatable.csv")) %>%
+  mutate(date = as.Date(date))
 
 AOD_ts <- ggplot(data=combined_AOD_df,aes(x=date, y=AOD,group=group,col=group))+
   # geom_line(data=cleandata1_2,mapping=aes(x=time,y=meanPM,col=Group))+
@@ -337,9 +349,10 @@ AOD_ts <- ggplot(data=combined_AOD_df,aes(x=date, y=AOD,group=group,col=group))+
   
   # geom_text(data=cleandata1_2,aes(x=time, y=meanPM,fill=Group,label=Location), vjust=1.6, color="black",
   #        position = position_dodge(0.9), size=3.5)+
-  labs(title = "Time Series of Annual Mean Aerosol Optical Depth\nMetro Atlanta vs Select ZIP Codes, 2002-2022",
+  labs(title = "Time Series of Annual Mean Air Pollution (AOD)\nMetro Atlanta vs Select ZIP Codes, 2002-2022",
        y = "Aerosol Optical Depth",
-       x = "Date")+
+       x = "Date",
+       caption = "AOD, or Aerosol Optical Depth, is a metric which\nmeasures aerosol levels by observing the amount of\nlight absorbed and scattered by the atmosphere")+
   scale_color_manual(name="Legend",
                      labels = c("Metro Atlanta","Select ZIP Codes"),
                      values=c("blue","red"))+
